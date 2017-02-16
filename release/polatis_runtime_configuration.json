@@ -1,0 +1,26 @@
+{
+  "common_variable": {
+    "connection_port": 3082,
+    "default_prompt": ">\\s*$",
+    "enable_prompt": "#\\s*$",
+    "config_prompt": "[(]config.*[)]#\\s*$",
+    "resource_name": [
+      "Unused",
+      "Blade {address}",
+      "Port {address}"
+    ],
+    "resource_family_name": [
+      "L1 Optical Switch",
+      "L1 Optical Switch Blade",
+      "L1 Optical Switch Port"
+    ],
+    "resource_model_name": [
+      "Polatis",
+      "Blade Polatis",
+      "Port Polatis"
+    ]
+  },
+  "driver_variable": {
+
+  }
+}

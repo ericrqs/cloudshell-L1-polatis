@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import sys
 
@@ -47,7 +48,7 @@ class PolatisL1Handler(L1HandlerBase):
             self._logger.warn('Failed to read JSON config file: ' + str(e))
             o = {}
 
-        self._port = o.get("common_variable", {}).get("connection_port", 22)
+        self._port = o.get("common_variable", {}).get("connection_port", 3082)
         PolatisDefaultCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("default_prompt", r'>\s*$')
         PolatisEnableCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("enable_prompt", r'#\s*$')
         PolatisConfigCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("config_prompt", r'[(]config.*[)]#\s*$')
@@ -82,7 +83,7 @@ class PolatisL1Handler(L1HandlerBase):
         :return: L1DriverResourceInfo
         """
 
-        psize = self._connection.command("RTRV-EQPT:{name}:SYSTEM:{counter}:::PARAMETER=SIZE;")
+        psize = self._connection.tl1_command("RTRV-EQPT:{name}:SYSTEM:{counter}:::PARAMETER=SIZE;")
         m = re.search(r'SYSTEM:SIZE=(?P<a>\d+)x(?P<b>\d+)', psize)
         if m:
             size1 = int(m.groupdict()['a'])
@@ -91,7 +92,7 @@ class PolatisL1Handler(L1HandlerBase):
         else:
             raise Exception('Unable to determine system size: %s' % psize)
 
-        pserial = self._connection.command("RTRV-INV:{name}:OCS:{counter}:;")
+        pserial = self._connection.tl1_command("RTRV-INV:{name}:OCS:{counter}:;")
         m = re.search(r'SN=(\w+)', pserial)
         if m:
             serial = m.groups()[0]
@@ -101,7 +102,7 @@ class PolatisL1Handler(L1HandlerBase):
 
         sw = L1DriverResourceInfo('', address, self._switch_family, self._switch_model, serial=serial)
 
-        netype = self._connection.command('RTRV-NETYPE:{name}::{counter}:;')
+        netype = self._connection.tl1_command('RTRV-NETYPE:{name}::{counter}:;')
         m = re.search(r'"(?P<vendor>.*),(?P<model>.*),(?P<type>.*),(?P<version>.*)"', netype)
         if not m:
             m = re.search(r'(?P<vendor>.*),(?P<model>.*),(?P<type>.*),(?P<version>.*)', netype)
@@ -114,7 +115,7 @@ class PolatisL1Handler(L1HandlerBase):
             self._logger.warn('Unable to parse system info: %s' % netype)
 
         portaddr2partneraddr = {}
-        patch = self._connection.command("RTRV-PATCH:{name}::{counter}:;")
+        patch = self._connection.tl1_command("RTRV-PATCH:{name}::{counter}:;")
         for line in patch.split('\n'):
             line = line.strip()
             m = re.search(r'"(\d+),(\d+)"', line)
@@ -125,7 +126,7 @@ class PolatisL1Handler(L1HandlerBase):
                 portaddr2partneraddr[b] = a
 
         portaddr2status = {}
-        shutters = self._connection.command("RTRV-PORT-SHUTTER:{name}:1&&%d:{counter}:;" % size)
+        shutters = self._connection.tl1_command("RTRV-PORT-SHUTTER:{name}:1&&%d:{counter}:;" % size)
         for line in shutters.split('\n'):
             line = line.strip()
             m = re.search(r'"(\d+):(\S+)"', line)
