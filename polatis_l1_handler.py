@@ -49,9 +49,6 @@ class PolatisL1Handler(L1HandlerBase):
             o = {}
 
         self._port = o.get("common_variable", {}).get("connection_port", 3082)
-        PolatisDefaultCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("default_prompt", r'>\s*$')
-        PolatisEnableCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("enable_prompt", r'#\s*$')
-        PolatisConfigCommandMode.PROMPT_REGEX = o.get("common_variable", {}).get("config_prompt", r'[(]config.*[)]#\s*$')
 
         self._switch_family, self._blade_family, self._port_family = o.get("common_variable", {}).get("resource_family_name",
             ['L1 Optical Switch', 'L1 Optical Switch Blade', 'L1 Optical Switch Port'])
@@ -61,8 +58,6 @@ class PolatisL1Handler(L1HandlerBase):
             ['Unused', 'Blade {address}', 'Port {address}'])
 
         self._logger.info('Connecting to %s on port %d with username %s' % (self._host, self._port, self._username))
-
-        self._example_driver_setting = o.get("driver_variable", {}).get("example_driver_setting", False)
 
         self._logger.info('Connecting...')
         cli_type = 'tl1'
