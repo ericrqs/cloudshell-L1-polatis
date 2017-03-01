@@ -10,7 +10,7 @@ from polatis_cli_connection import PolatisCliConnection
 
 
 class PolatisL1Handler(L1HandlerBase):
-    
+
     def __init__(self, logger):
         self._logger = logger
 
@@ -50,14 +50,15 @@ class PolatisL1Handler(L1HandlerBase):
         _, self._blade_name_template, self._port_name_template = o.get("common_variable", {}).get("resource_name",
             ['Unused', 'Blade {address}', 'Port {address}'])
 
-        self._command_mode_lc = o.get("common_variable", {}).get("command_mode", 'tl1').lower()
+        self._command_mode_lc = o.get("common_variable", {}).get("connection_mode", 'tl1').lower()
 
         self._connection.set_resource_address(address)
         self._connection.set_port(port)
         self._connection.set_username(username)
         self._connection.set_password(password)
         self._connection.set_cli_type(self._command_mode_lc)
-        self._logger.info('Connection will be %s to address %s on port %d with username %s' % (self._command_mode_lc, address, port, username))
+        self._logger.info('Connection will be %s to address %s on port %d with username %s' % (
+        self._command_mode_lc, address, port, username))
 
     def logout(self):
         """
@@ -230,7 +231,13 @@ class PolatisL1Handler(L1HandlerBase):
         """
         self._logger.info('map_clear {} {}'.format(src_port, dst_port))
 
-        self.map_clear_to(src_port, dst_port)
+        min_port = min(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
+        max_port = max(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
+
+        if self._command_mode_lc == 'tl1':
+            self._connection.tl1_command("DLT-PATCH:{name}:%d:{counter}:;" % min_port)
+        else:
+            self._connection.scpi_command(':oxc:swit:conn:sub (@%d),(@%d);*opc?' % (min_port, max_port))
 
     def set_speed_manual(self, src_port, dst_port, speed, duplex):
         """

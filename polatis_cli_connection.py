@@ -73,8 +73,8 @@ CommandMode.RELATIONS_DICT = {
     }
 }
 
-SCPI_COMMAND = CommandTemplate('{command}')
 TL1_COMMAND = CommandTemplate('{command}')
+SCPI_COMMAND = CommandTemplate('{command}')
 
 SHOW_VERSION = CommandTemplate('show version', action_map=OrderedDict([
     (r'--More--', lambda session, logger: session._send(' ', logger))
@@ -177,9 +177,8 @@ class SCPISession(TCPSession):
     SESSION_TYPE = 'SCPI'
     BUFFER_SIZE = 1024
 
-    def __init__(self, host, port, on_session_start=None, logger=None, *args, **kwargs):
+    def __init__(self, host, port, on_session_start=None, *args, **kwargs):
         super(SCPISession, self).__init__(host, port, on_session_start=on_session_start, *args, **kwargs)
-        self._logger = logger
 
     def connect(self, prompt, logger):
         """
@@ -225,93 +224,92 @@ class SCPISession(TCPSession):
         return rv
 
 
-    class _PolatisCliHandler(CliHandlerImpl):
-        def __init__(self, cli, logger):
-            super(_PolatisCliHandler, self).__init__(cli, None, logger, None)
-            self._cli_type = None
-            self._resource_address = None
-            self._port = None
-            self._username = None
-            self._password = None
+class _PolatisCliHandler(CliHandlerImpl):
+    def __init__(self, cli, logger):
+        super(_PolatisCliHandler, self).__init__(cli, None, logger, None)
+        self._cli_type = None
+        self._resource_address = None
+        self._port = None
+        self._username = None
+        self._password = None
 
-            modes = CommandModeHelper.create_command_mode()
-            self.default_mode = modes[PolatisDefaultCommandMode]
-            self.enable_mode = modes[PolatisEnableCommandMode]
-            self.config_mode = modes[PolatisConfigCommandMode]
+        modes = CommandModeHelper.create_command_mode()
+        self.default_mode = modes[PolatisDefaultCommandMode]
+        self.enable_mode = modes[PolatisEnableCommandMode]
+        self.config_mode = modes[PolatisConfigCommandMode]
 
+    @property
+    def resource_address(self):
+        return self._resource_address
 
-        @property
-        def resource_address(self):
-            return self._resource_address
+    @resource_address.setter
+    def resource_address(self, v):
+        self._resource_address = v
 
-        @resource_address.setter
-        def resource_address(self, v):
-            self._resource_address = v
+    @property
+    def password(self):
+        return self._password
 
-        @property
-        def password(self):
-            return self._password
+    @password.setter
+    def password(self, v):
+        self._password = v
 
-        @password.setter
-        def password(self, v):
-            self._password = v
+    @property
+    def cli_type(self):
+        return self._cli_type
 
-        @property
-        def cli_type(self):
-            return self._cli_type
+    @cli_type.setter
+    def cli_type(self, cli_type):
+        self._cli_type = cli_type
+        if cli_type.lower() in ['tl1', 'scpi']:
+            # Sending an empty line to probe for the current prompt doesn't work for TL1.
+            # With this workaround, TL1 is always considered to be in the default mode.
+            CommandModeHelper.determine_current_mode = staticmethod(lambda o1, o2, o3: self.default_mode)
 
-        @cli_type.setter
-        def cli_type(self, cli_type):
-            self._cli_type = cli_type
-            if cli_type.lower() in ['tl1', 'scpi']:
-                # Sending an empty line to probe for the current prompt doesn't work for TL1.
-                # With this workaround, TL1 is always considered to be in the default mode.
-                CommandModeHelper.determine_current_mode = staticmethod(lambda o1, o2, o3: self.default_mode)
+    @property
+    def username(self):
+        return self._username
 
-        @property
-        def username(self):
-            return self._username
+    @username.setter
+    def username(self, v):
+        self._username = v
 
-        @username.setter
-        def username(self, v):
-            self._username = v
+    @property
+    def port(self):
+        return self._port
 
-        @property
-        def port(self):
-            return self._port
+    @port.setter
+    def port(self, v):
+        self._port = v
 
-        @port.setter
-        def port(self, v):
-            self._port = v
+    def _new_sessions(self):
+        if self.cli_type.lower() == SSHSession.SESSION_TYPE.lower():
+            new_sessions = self._ssh_session()
+        elif self.cli_type.lower() == TelnetSession.SESSION_TYPE.lower():
+            new_sessions = self._telnet_session()
+        elif self.cli_type.lower() == TL1Session.SESSION_TYPE.lower():
+            new_sessions = self._tl1_session()
+        elif self.cli_type.lower() == SCPISession.SESSION_TYPE.lower():
+            new_sessions = self._scpi_session()
+        else:
+            new_sessions = [self._ssh_session(), self._telnet_session()]
+        return new_sessions
 
-        def _new_sessions(self):
-            if self.cli_type.lower() == SSHSession.SESSION_TYPE.lower():
-                new_sessions = self._ssh_session()
-            elif self.cli_type.lower() == TelnetSession.SESSION_TYPE.lower():
-                new_sessions = self._telnet_session()
-            elif self.cli_type.lower() == TL1Session.SESSION_TYPE.lower():
-                new_sessions = self._tl1_session()
-            elif self.cli_type.lower() == SCPISession.SESSION_TYPE.lower():
-                new_sessions = self._scpi_session(self._logger)
-            else:
-                new_sessions = [self._ssh_session(), self._telnet_session()]
-            return new_sessions
+    def _ssh_session(self):
+        return SSHSession(self.resource_address, self.username, self.password, self.port, self.on_session_start,
+                          loop_detector_max_action_loops=10000)
 
-        def _ssh_session(self):
-            return SSHSession(self.resource_address, self.username, self.password, self.port, self.on_session_start,
-                              loop_detector_max_action_loops=10000)
+    def _telnet_session(self):
+        return TelnetSession(self.resource_address, self.username, self.password, self.port, self.on_session_start,
+                             loop_detector_max_action_loops=10000)
 
-        def _telnet_session(self):
-            return TelnetSession(self.resource_address, self.username, self.password, self.port, self.on_session_start,
-                                 loop_detector_max_action_loops=10000)
+    def _tl1_session(self):
+        return TL1Session(self.resource_address, self.username, self.password, self.port, self.on_session_start,
+                          loop_detector_max_action_loops=10000)
 
-        def _tl1_session(self):
-            return TL1Session(self.resource_address, self.username, self.password, self.port, self.on_session_start,
-                              loop_detector_max_action_loops=10000)
-
-        def _scpi_session(self, logger):
-            return SCPISession(self.resource_address, self.port, self.on_session_start,
-                              loop_detector_max_action_loops=10000, logger=logger)
+    def _scpi_session(self):
+        return SCPISession(self.resource_address, self.port, self.on_session_start,
+                           loop_detector_max_action_loops=10000)
 
 
 class PolatisCliConnection:

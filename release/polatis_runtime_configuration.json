@@ -1,7 +1,7 @@
 {
   "common_variable": {
-    "command_mode": "scpi",
-    "connection_port": 333,
+    "connection_mode": "tl1",
+    "connection_port": 3082,
     "resource_name": [
       "Unused",
       "Blade {address}",
@@ -19,5 +19,6 @@
     ]
   },
   "driver_variable": {
+
   }
 }
