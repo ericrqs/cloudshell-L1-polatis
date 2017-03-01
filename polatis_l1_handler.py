@@ -6,18 +6,13 @@ import sys
 
 from l1_driver_resource_info import L1DriverResourceInfo
 from l1_handler_base import L1HandlerBase
-from polatis_cli_connection import PolatisCliConnection, PolatisDefaultCommandMode, PolatisEnableCommandMode, PolatisConfigCommandMode
+from polatis_cli_connection import PolatisCliConnection
 
 
 class PolatisL1Handler(L1HandlerBase):
     
     def __init__(self, logger):
         self._logger = logger
-
-        self._host = None
-        self._username = None
-        self._password = None
-        self._port = None
 
         self._switch_family = None
         self._blade_family = None
@@ -28,7 +23,9 @@ class PolatisL1Handler(L1HandlerBase):
         self._blade_name_template = None
         self._port_name_template = None
 
-        self._connection = None
+        self._command_mode_lc = None
+
+        self._connection = PolatisCliConnection(self._logger)
 
     def login(self, address, username, password):
         """
@@ -37,10 +34,6 @@ class PolatisL1Handler(L1HandlerBase):
         :param password: str
         :return: None
         """
-        self._host = address
-        self._username = username
-        self._password = password
-
         try:
             with open(os.path.join(os.path.dirname(sys.argv[0]), 'polatis_runtime_configuration.json')) as f:
                 o = json.loads(f.read())
@@ -48,7 +41,7 @@ class PolatisL1Handler(L1HandlerBase):
             self._logger.warn('Failed to read JSON config file: ' + str(e))
             o = {}
 
-        self._port = o.get("common_variable", {}).get("connection_port", 3082)
+        port = o.get("common_variable", {}).get("connection_port", 3082)
 
         self._switch_family, self._blade_family, self._port_family = o.get("common_variable", {}).get("resource_family_name",
             ['L1 Optical Switch', 'L1 Optical Switch Blade', 'L1 Optical Switch Port'])
@@ -57,20 +50,20 @@ class PolatisL1Handler(L1HandlerBase):
         _, self._blade_name_template, self._port_name_template = o.get("common_variable", {}).get("resource_name",
             ['Unused', 'Blade {address}', 'Port {address}'])
 
-        self._logger.info('Connecting to %s on port %d with username %s' % (self._host, self._port, self._username))
+        self._command_mode_lc = o.get("common_variable", {}).get("command_mode", 'tl1').lower()
 
-        self._logger.info('Connecting...')
-        cli_type = 'tl1'
-        self._connection = PolatisCliConnection(self._logger, cli_type, self._host, self._port, self._username, self._password)
-        self._logger.info('Connected')
+        self._connection.set_resource_address(address)
+        self._connection.set_port(port)
+        self._connection.set_username(username)
+        self._connection.set_password(password)
+        self._connection.set_cli_type(self._command_mode_lc)
+        self._logger.info('Connection will be %s to address %s on port %d with username %s' % (self._command_mode_lc, address, port, username))
 
     def logout(self):
         """
         :return: None
         """
-        self._logger.info('Disconnecting...')
-        self._connection = None
-        self._logger.info('Disconnected')
+        pass
 
     def get_resource_description(self, address):
         """
@@ -78,26 +71,43 @@ class PolatisL1Handler(L1HandlerBase):
         :return: L1DriverResourceInfo
         """
 
-        psize = self._connection.tl1_command("RTRV-EQPT:{name}:SYSTEM:{counter}:::PARAMETER=SIZE;")
-        m = re.search(r'SYSTEM:SIZE=(?P<a>\d+)x(?P<b>\d+)', psize)
-        if m:
-            size1 = int(m.groupdict()['a'])
-            size2 = int(m.groupdict()['b'])
-            size = size1 + size2
+        if self._command_mode_lc == 'tl1':
+            psize = self._connection.tl1_command("RTRV-EQPT:{name}:SYSTEM:{counter}:::PARAMETER=SIZE;")
+            m = re.search(r'SYSTEM:SIZE=(?P<a>\d+)x(?P<b>\d+)', psize)
+            if m:
+                size1 = int(m.groupdict()['a'])
+                size2 = int(m.groupdict()['b'])
+                size = size1 + size2
+            else:
+                raise Exception('Unable to determine system size: %s' % psize)
         else:
-            raise Exception('Unable to determine system size: %s' % psize)
+            psize = self._connection.scpi_command(':OXC:SWITch:SIZE?')
+            m = re.search(r'(?P<a>\d+),(?P<b>\d+)', psize)
+            if m:
+                size1 = int(m.groupdict()['a'])
+                size2 = int(m.groupdict()['b'])
+                size = size1 + size2
+            else:
+                raise Exception('Unable to determine system size: %s' % psize)
 
-        pserial = self._connection.tl1_command("RTRV-INV:{name}:OCS:{counter}:;")
-        m = re.search(r'SN=(\w+)', pserial)
-        if m:
-            serial = m.groups()[0]
+        if self._command_mode_lc == 'tl1':
+            pserial = self._connection.tl1_command("RTRV-INV:{name}:OCS:{counter}:;")
+            m = re.search(r'SN=(\w+)', pserial)
+            if m:
+                serial = m.groups()[0]
+            else:
+                self._logger.warn('Failed to extract serial number: %s' % pserial)
+                serial = '-1'
         else:
-            self._logger.warn('Failed to extract serial number: %s' % pserial)
             serial = '-1'
 
         sw = L1DriverResourceInfo('', address, self._switch_family, self._switch_model, serial=serial)
 
-        netype = self._connection.tl1_command('RTRV-NETYPE:{name}::{counter}:;')
+        if self._command_mode_lc == 'tl1':
+            netype = self._connection.tl1_command('RTRV-NETYPE:{name}::{counter}:;')
+        else:
+            netype = self._connection.scpi_command('*IDN?')
+
         m = re.search(r'"(?P<vendor>.*),(?P<model>.*),(?P<type>.*),(?P<version>.*)"', netype)
         if not m:
             m = re.search(r'(?P<vendor>.*),(?P<model>.*),(?P<type>.*),(?P<version>.*)', netype)
@@ -110,23 +120,46 @@ class PolatisL1Handler(L1HandlerBase):
             self._logger.warn('Unable to parse system info: %s' % netype)
 
         portaddr2partneraddr = {}
-        patch = self._connection.tl1_command("RTRV-PATCH:{name}::{counter}:;")
-        for line in patch.split('\n'):
-            line = line.strip()
-            m = re.search(r'"(\d+),(\d+)"', line)
+        if self._command_mode_lc == 'tl1':
+            patch = self._connection.tl1_command("RTRV-PATCH:{name}::{counter}:;")
+            for line in patch.split('\n'):
+                line = line.strip()
+                m = re.search(r'"(\d+),(\d+)"', line)
+                if m:
+                    a = int(m.groups()[0])
+                    b = int(m.groups()[1])
+                    portaddr2partneraddr[a] = b
+                    portaddr2partneraddr[b] = a
+        else:
+            patch = self._connection.scpi_command(':OXC:SWITch:CONNect:STATe?')
+            m = re.search(r'\(@([0-9,]*)\),\(@([0-9,]*)\)', patch)
             if m:
-                a = int(m.groups()[0])
-                b = int(m.groups()[1])
-                portaddr2partneraddr[a] = b
-                portaddr2partneraddr[b] = a
+                fr, to = m.groups()
+                if fr:
+                    ff = fr.split(',')
+                    tt = to.split(',')
+                    if len(ff) != len(tt):
+                        raise Exception('FROM and TO lists different lengths: <%s>, <%s>' % (fr, to))
+                    for i in range(len(ff)):
+                        a = int(ff[i])
+                        b = int(tt[i])
+                        portaddr2partneraddr[a] = b
+                        portaddr2partneraddr[b] = a
 
         portaddr2status = {}
-        shutters = self._connection.tl1_command("RTRV-PORT-SHUTTER:{name}:1&&%d:{counter}:;" % size)
-        for line in shutters.split('\n'):
-            line = line.strip()
-            m = re.search(r'"(\d+):(\S+)"', line)
+        if self._command_mode_lc == 'tl1':
+            shutters = self._connection.tl1_command("RTRV-PORT-SHUTTER:{name}:1&&%d:{counter}:;" % size)
+            for line in shutters.split('\n'):
+                line = line.strip()
+                m = re.search(r'"(\d+):(\S+)"', line)
+                if m:
+                    portaddr2status[int(m.groups()[0])] = m.groups()[1]
+        else:
+            statuses = self._connection.scpi_command(':OXC:SWITch:PORT:STATe?')
+            m = re.search(r'\(([DEF,]*)\)', statuses)
             if m:
-                portaddr2status[int(m.groups()[0])] = m.groups()[1]
+                for i, v in enumerate(m.groups()[0].split(',')):
+                    portaddr2status[i + 1] = 'open' if v=='E' else v
 
         for portaddr in range(1, size+1):
             if portaddr in portaddr2partneraddr:
@@ -167,7 +200,11 @@ class PolatisL1Handler(L1HandlerBase):
 
         min_port = min(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
         max_port = max(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
-        self._connection.tl1_command("ENT-PATCH:{name}:%d,%d:{counter}:;" % (min_port, max_port))
+
+        if self._command_mode_lc == 'tl1':
+            self._connection.tl1_command("ENT-PATCH:{name}:%d,%d:{counter}:;" % (min_port, max_port))
+        else:
+            self._connection.scpi_command(':oxc:swit:conn:add (@%d),(@%d);*opc?' % (min_port, max_port))
 
     def map_clear_to(self, src_port, dst_port):
         """
@@ -178,8 +215,12 @@ class PolatisL1Handler(L1HandlerBase):
         self._logger.info('map_clear_to {} {}'.format(src_port, dst_port))
 
         min_port = min(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
+        max_port = max(int(src_port.split('/')[-1]), int(dst_port.split('/')[-1]))
 
-        self._connection.tl1_command("DLT-PATCH:{name}:%d:{counter}:;" % min_port)
+        if self._command_mode_lc == 'tl1':
+            self._connection.tl1_command("DLT-PATCH:{name}:%d:{counter}:;" % min_port)
+        else:
+            self._connection.scpi_command(':oxc:swit:conn:sub (@%d),(@%d);*opc?' % (min_port, max_port))
 
     def map_clear(self, src_port, dst_port):
         """

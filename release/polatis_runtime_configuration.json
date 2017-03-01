@@ -1,9 +1,7 @@
 {
   "common_variable": {
-    "connection_port": 3082,
-    "default_prompt": ">\\s*$",
-    "enable_prompt": "#\\s*$",
-    "config_prompt": "[(]config.*[)]#\\s*$",
+    "command_mode": "scpi",
+    "connection_port": 333,
     "resource_name": [
       "Unused",
       "Blade {address}",
@@ -21,6 +19,5 @@
     ]
   },
   "driver_variable": {
-
   }
 }
